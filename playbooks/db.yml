@@ -1,0 +1,76 @@
+---
+# ==================================================
+# Playbook DB
+# Configuração do servidor de banco de dados
+# Projeto DevOps - IFPB
+# ==================================================
+
+- name: Configuração básica do servidor DB
+  hosts: db
+  become: true
+
+  vars:
+    ip_arq: 192.168.56.121
+    nfs_mount_point: /var/nfs
+    nfs_map_file: /etc/auto.nfs
+
+
+  tasks:
+
+    # ================= BANCO DE DADOS =================
+
+    - name: Instalar MariaDB
+      apt:
+        name: mariadb-server
+        state: present
+        update_cache: yes
+
+    - name: Garantir MariaDB ativo no boot
+      systemd:
+        name: mariadb
+        state: started
+        enabled: yes
+
+
+    # ================= AUTOFS / NFS =================
+
+    - name: Instalar autofs
+      apt:
+        name: autofs
+        state: present
+
+    - name: Configurar mapa autofs para NFS
+      copy:
+        dest: "{{ nfs_map_file }}"
+        content: |
+          dados -fstype=nfs4,rw {{ ip_arq }}:/dados/nfs
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart autofs
+
+    - name: Garantir entrada no auto.master
+      lineinfile:
+        path: /etc/auto.master
+        line: "{{ nfs_mount_point }} {{ nfs_map_file }}"
+        state: present
+        create: yes
+        backup: yes
+      notify: restart autofs
+
+    - name: Criar diretório de montagem
+      file:
+        path: "{{ nfs_mount_point }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+
+  handlers:
+
+    - name: restart autofs
+      systemd:
+        name: autofs
+        state: restarted
+        enabled: yes

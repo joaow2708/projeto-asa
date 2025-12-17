@@ -1,0 +1,117 @@
+---
+# ==================================================
+# Playbook - Cliente (CLI)
+# Projeto DevOps IFPB
+# Funções: Acesso NFS, X11 Forwarding e Navegador
+# ==================================================
+
+- name: Configuração básica do host cliente
+  hosts: cli
+  become: true
+
+  vars:
+    nfs_mount_point: /var/nfs
+    nfs_server_ip: "{{ ip_arq }}"
+    nfs_export: "/dados/nfs"
+
+  tasks:
+
+    # ================= PACOTES =================
+
+    - name: Atualizar cache e instalar pacotes necessários
+      apt:
+        name:
+          - firefox-esr
+          - xauth
+          - autofs
+        state: present
+        update_cache: yes
+
+
+    # ================= SSH / X11 =================
+
+    - name: Habilitar X11 Forwarding no SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^X11Forwarding'
+        line: 'X11Forwarding yes'
+        state: present
+      notify: restart sshd
+
+
+    # ================= AUTOFS / NFS =================
+
+    - name: Garantir existência do arquivo auto.master
+      file:
+        path: /etc/auto.master
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Criar mapa autofs para NFS
+      copy:
+        dest: /etc/auto.nfs-cli
+        content: |
+          dados -fstype=nfs,rw {{ nfs_server_ip }}:{{ nfs_export }}
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart autofs
+
+    - name: Adicionar entrada no auto.master
+      lineinfile:
+        path: /etc/auto.master
+        line: "{{ nfs_mount_point }} /etc/auto.nfs-cli"
+        state: present
+        backup: yes
+      notify: restart autofs
+
+    - name: Criar diretório de montagem NFS
+      file:
+        path: "{{ nfs_mount_point }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+
+    # ================= SERVIÇOS =================
+
+    - name: Garantir serviços ativos
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - sshd
+        - autofs
+
+
+    # ================= VERIFICAÇÃO =================
+
+    - name: Verificar configuração do autofs
+      shell: |
+        echo "=== auto.master ==="
+        cat /etc/auto.master
+        echo "=== auto.nfs-cli ==="
+        cat /etc/auto.nfs-cli
+      register: autofs_check
+      changed_when: false
+
+    - name: Exibir verificação do autofs
+      debug:
+        var: autofs_check.stdout_lines
+
+
+  handlers:
+
+    - name: restart sshd
+      systemd:
+        name: sshd
+        state: restarted
+
+    - name: restart autofs
+      systemd:
+        name: autofs
+        state: restarted

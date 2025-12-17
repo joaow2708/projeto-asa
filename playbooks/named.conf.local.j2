@@ -1,0 +1,20 @@
+//
+// Configuração das zonas DNS do domínio {{ dominio }}
+//
+
+// ---------------------------
+// Zona direta (Forward Zone)
+// ---------------------------
+zone "{{ dominio }}" {
+    type master;
+    file "/etc/bind/db.{{ dominio }}";
+};
+
+// --------------------------------------------
+// Zona reversa (Reverse Zone)
+// Rede: 192.168.56.0/24
+// --------------------------------------------
+zone "56.168.192.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.56.168.192";
+};

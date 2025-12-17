@@ -1,0 +1,119 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+# Define o modo Ruby para editores de texto (ex: Vim), sem impacto na execução
+
+Vagrant.configure("2") do |config|
+  # Inicia a configuração usando a versão 2 do Vagrantfile (padrão atual)
+
+  # ================= CONFIGURAÇÕES GERAIS =================
+
+  # Define a box base (SO) utilizada por todas as máquinas virtuais
+  config.vm.box = "debian/bookworm64"
+
+  # Impede a geração automática de novas chaves SSH
+  # Mantém a chave padrão do Vagrant para facilitar automação
+  config.ssh.insert_key = false
+
+  # ================= PROVEDOR VIRTUALBOX =================
+  config.vm.provider "virtualbox" do |vb|
+    # Define memória padrão para as VMs
+    vb.memory = 512
+
+    # Desabilita verificação de Guest Additions
+    # Evita warnings e problemas de compatibilidade
+    vb.check_guest_additions = false
+  end
+
+  # ================= PROVISIONAMENTO COMUM =================
+  # Playbook executado em TODAS as máquinas
+  config.vm.provision "ansible" do |ansible|
+    # Define modo de compatibilidade do Ansible
+    ansible.compatibility_mode = "2.0"
+
+    # Playbook com configurações básicas comuns
+    ansible.playbook = "playbooks/common.yml"
+
+    # Define explicitamente os grupos do Ansible
+    ansible.groups = {
+      "all" => ["arq", "db", "app", "cli"]
+    }
+  end
+
+  # ================= SERVIDOR DE ARQUIVOS =================
+  config.vm.define "arq" do |arq|
+    # Hostname do servidor de arquivos
+    arq.vm.hostname = "arq.caua.joao.devops"
+
+    # IP estático conforme especificação do projeto
+    arq.vm.network "private_network", ip: "192.168.56.121"
+
+    # Criação e anexação de 3 discos adicionais de 10GB
+    # Utilizados posteriormente pelo LVM
+    (0..2).each do |i|
+      arq.vm.disk :disk, size: "10GB", name: "disk-arq-#{i}"
+    end
+
+    # Provisionamento específico do servidor arq
+    arq.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/arq.yml"
+      ansible.become = true
+      ansible.verbose = "v"
+    end
+  end
+
+  # ================= SERVIDOR DE BANCO DE DADOS =================
+  config.vm.define "db" do |db|
+    # Hostname do servidor de banco de dados
+    db.vm.hostname = "db.caua.joao.devops"
+
+    # IP configurado na rede privada
+    # (no projeto original poderia ser via DHCP)
+    db.vm.network "private_network", ip: "192.168.56.122"
+
+    # Provisionamento específico do servidor DB
+    db.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/db.yml"
+      ansible.become = true
+      ansible.verbose = "v"
+    end
+  end
+
+  # ================= SERVIDOR DE APLICAÇÃO =================
+  config.vm.define "app" do |app|
+    # Hostname do servidor de aplicação
+    app.vm.hostname = "app.caua.joao.devops"
+
+    # IP configurado na rede privada
+    app.vm.network "private_network", ip: "192.168.56.123"
+
+    # Provisionamento específico do servidor APP
+    app.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/app.yml"
+      ansible.become = true
+      ansible.verbose = "v"
+    end
+  end
+
+  # ================= CLIENTE =================
+  config.vm.define "cli" do |cli|
+    # Hostname da máquina cliente
+    cli.vm.hostname = "cli.caua.joao.devops"
+
+    # IP configurado na rede privada
+    cli.vm.network "private_network", ip: "192.168.56.124"
+
+    # Configuração específica de hardware do cliente
+    cli.vm.provider "virtualbox" do |vb|
+      vb.memory = 1024      # Cliente possui mais memória
+      vb.name = "cli-devops"
+    end
+
+    # Provisionamento específico da máquina cliente
+    cli.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/cli.yml"
+      ansible.become = true
+      ansible.verbose = "v"
+    end
+  end
+
+end

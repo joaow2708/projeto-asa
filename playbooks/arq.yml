@@ -1,0 +1,212 @@
+---
+# ==================================================
+# Playbook - Servidor de Arquivos (ARQ)
+# Projeto DevOps IFPB
+# Serviços: DHCP, DNS, LVM e NFS
+# ==================================================
+
+- name: Configurar servidor de arquivos
+  hosts: arq
+  become: true
+
+  vars:
+    dominio: caua.joao.devops
+
+    # IPs do ambiente
+    ip_arq: 192.168.56.121
+    ip_db: 192.168.56.122
+    ip_app: 192.168.56.123
+
+    # Rede
+    rede: 192.168.56.0/24
+    gateway: 192.168.56.1
+
+    # Interface usada pelo DHCP (Host-Only)
+    interface_dhcp: enp0s8
+
+    # Usuários do projeto
+    usuarios:
+      - caua
+      - joao
+
+    # LVM
+    vg_name: ifpb_vg
+    lv_name: ifpb_lv
+    mount_point: /dados
+
+    # NFS
+    nfs_dir: /dados/nfs
+
+  tasks:
+
+    # ================= DHCP =================
+
+    - name: Instalar servidor DHCP
+      apt:
+        name: isc-dhcp-server
+        state: present
+        update_cache: yes
+
+    - name: Configurar DHCP
+      template:
+        src: dhcpd.conf.j2
+        dest: /etc/dhcp/dhcpd.conf
+        mode: "0644"
+      notify: restart dhcp
+
+    - name: Definir interface do DHCP
+      lineinfile:
+        path: /etc/default/isc-dhcp-server
+        regexp: '^INTERFACESv4='
+        line: 'INTERFACESv4="{{ interface_dhcp }}"'
+        state: present
+      notify: restart dhcp
+
+
+    # ================= DNS =================
+
+    - name: Instalar Bind9
+      apt:
+        name: bind9
+        state: present
+        update_cache: yes
+
+    - name: Configurar opções do Bind
+      template:
+        src: named.conf.options.j2
+        dest: /etc/bind/named.conf.options
+        mode: "0644"
+      notify: restart bind9
+
+    - name: Configurar zonas do Bind
+      template:
+        src: named.conf.local.j2
+        dest: /etc/bind/named.conf.local
+        mode: "0644"
+      notify: restart bind9
+
+    - name: Criar zona direta
+      template:
+        src: db.dominio.j2
+        dest: "/etc/bind/db.caua"
+        mode: "0644"
+      notify: restart bind9
+
+    - name: Criar zona reversa
+      template:
+        src: db.reversa.j2
+        dest: /etc/bind/db.56.168.192
+        mode: "0644"
+      notify: restart bind9
+
+
+    # ================= LVM =================
+
+    - name: Instalar pacotes LVM
+      apt:
+        name:
+          - parted
+          - lvm2
+          - e2fsprogs
+        state: present
+        update_cache: yes
+
+    - name: Identificar discos adicionais
+      set_fact:
+        discos_lvm: "{{ ['sdb', 'sdc', 'sdd'] | select('in', ansible_facts.devices.keys()) | list }}"
+
+    - name: Criar partições LVM
+      parted:
+        device: "/dev/{{ item }}"
+        label: gpt
+        number: 1
+        part_start: 1MiB
+        part_end: 100%
+        state: present
+      loop: "{{ discos_lvm }}"
+      when: discos_lvm | length > 0
+
+    - name: Criar PVs
+      shell: pvcreate /dev/{{ item }}1 || true
+      loop: "{{ discos_lvm }}"
+      when: discos_lvm | length > 0
+
+    - name: Criar VG
+      shell: vgcreate {{ vg_name }} /dev/sd[bcd]1 || true
+      when: discos_lvm | length > 0
+
+    - name: Criar LV
+      shell: lvcreate -l 100%FREE -n {{ lv_name }} {{ vg_name }} || true
+      when: discos_lvm | length > 0
+
+    - name: Formatar volume lógico
+      filesystem:
+        fstype: ext4
+        dev: "/dev/{{ vg_name }}/{{ lv_name }}"
+      when: discos_lvm | length > 0
+
+    - name: Criar ponto de montagem
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: "0755"
+
+    - name: Montar volume lógico
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/{{ vg_name }}/{{ lv_name }}"
+        fstype: ext4
+        state: mounted
+
+
+    # ================= NFS =================
+
+    - name: Instalar servidor NFS
+      apt:
+        name: nfs-kernel-server
+        state: present
+        update_cache: yes
+
+    - name: Criar diretório NFS
+      file:
+        path: "{{ nfs_dir }}"
+        state: directory
+        mode: "0775"
+
+    - name: Configurar exportação NFS
+      copy:
+        dest: /etc/exports
+        content: |
+          {{ nfs_dir }} {{ rede }}(rw,sync,no_subtree_check,no_root_squash)
+        mode: "0644"
+      notify: restart nfs
+
+
+    # ================= SERVIÇOS =================
+
+    - name: Garantir serviços ativos
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - isc-dhcp-server
+        - bind9
+        - nfs-kernel-server
+
+  handlers:
+
+    - name: restart dhcp
+      systemd:
+        name: isc-dhcp-server
+        state: restarted
+
+    - name: restart bind9
+      systemd:
+        name: bind9
+        state: restarted
+
+    - name: restart nfs
+      systemd:
+        name: nfs-kernel-server
+        state: restarted

@@ -1,0 +1,31 @@
+; ==================================================
+; Zona reversa para a rede 192.168.56.0/24
+; Domínio reverso: 56.168.192.in-addr.arpa
+; Projeto DevOps - IFPB
+; ==================================================
+
+$TTL 86400
+
+@   IN  SOA  arq.{{ dominio }}. admin.{{ dominio }}. (
+        2025121601 ; Serial (YYYYMMDDNN)
+        3600       ; Refresh
+        1800       ; Retry
+        604800     ; Expire
+        86400 )    ; Minimum TTL
+
+
+; ================= SERVIDOR DNS =================
+
+@               IN  NS  arq.{{ dominio }}.
+
+
+; ================= REGISTROS PTR =================
+
+{% set arq_octeto = ip_arq.split('.')[-1] %}
+{{ arq_octeto }}      IN  PTR  arq.{{ dominio }}.
+
+{% set db_octeto = ip_db.split('.')[-1] %}
+{{ db_octeto }}       IN  PTR  db.{{ dominio }}.
+
+{% set app_octeto = ip_app.split('.')[-1] %}
+{{ app_octeto }}      IN  PTR  app.{{ dominio }}.

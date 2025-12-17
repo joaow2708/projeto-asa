@@ -1,0 +1,80 @@
+---
+# =========================================
+# Playbook - Servidor de Aplicação (APP)
+# Projeto DevOps IFPB
+# =========================================
+
+- name: Configurar servidor de aplicação
+  hosts: app
+  become: true
+
+  vars:
+    ip_arq: "192.168.56.121"
+    ip_app: "192.168.56.123"
+    dominio: "caua.joao.devops"
+
+  tasks:
+
+    # ================================
+    # Apache
+    # ================================
+
+    - name: Atualizar cache de pacotes
+      apt:
+        update_cache: yes
+
+    - name: Instalar Apache
+      apt:
+        name: apache2
+        state: present
+
+    - name: Criar página web padrão
+      template:
+        src: "index.html.j2"
+        dest: "/var/www/html/index.html"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+
+    - name: Garantir que o Apache esteja ativo
+      systemd:
+        name: apache2
+        state: started
+        enabled: yes
+
+    # ================================
+    # Autofs + NFS
+    # ================================
+
+    - name: Instalar autofs
+      apt:
+        name: autofs
+        state: present
+
+    - name: Criar diretório de montagem NFS
+      file:
+        path: "/var/nfs"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configurar mapa NFS do autofs
+      copy:
+        dest: "/etc/auto.nfs"
+        content: "nfs -fstype=nfs4,rw {{ ip_arq }}:/dados/nfs"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Garantir entrada no auto.master
+      lineinfile:
+        path: "/etc/auto.master"
+        line: "/var/nfs /etc/auto.nfs"
+        state: present
+
+    - name: Reiniciar serviço autofs
+      systemd:
+        name: autofs
+        state: restarted
+        enabled: yes

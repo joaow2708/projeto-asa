@@ -1,0 +1,161 @@
+---
+# ==================================================
+# Playbook COMMON
+# Configuração básica para todas as máquinas
+# Projeto DevOps - IFPB
+# ==================================================
+
+- name: Configuração básica para todos os hosts
+  hosts: all
+  become: true
+
+  vars:
+    ntp_servers:
+      - pool.ntp.br
+
+    usuarios:
+      - caua
+      - joao
+
+    timezone_name: America/Recife
+
+
+  tasks:
+
+    # ================= SISTEMA =================
+
+    - name: Atualizar cache do APT
+      apt:
+        update_cache: yes
+
+    - name: Instalar pacotes base
+      apt:
+        name:
+          - chrony
+          - openssh-server
+          - nfs-common
+        state: present
+
+
+    # ================= NTP / TIME =================
+
+    - name: Configurar servidores NTP (chrony)
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^pool '
+        line: 'pool {{ ntp_servers[0] }} iburst'
+        state: present
+      notify: restart chrony
+
+    - name: Configurar timezone
+      timezone:
+        name: "{{ timezone_name }}"
+
+
+    # ================= USUÁRIOS E GRUPOS =================
+
+    - name: Criar grupo ifpb
+      group:
+        name: ifpb
+        state: present
+
+    - name: Criar usuários do projeto
+      user:
+        name: "{{ item }}"
+        groups: ifpb
+        append: yes
+        shell: /bin/bash
+        state: present
+      loop: "{{ usuarios }}"
+
+
+    # ================= SSH - SEGURANÇA =================
+
+    - name: Criar diretórios .ssh
+      file:
+        path: "/home/{{ item }}/.ssh"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0700"
+      loop: "{{ usuarios }}"
+
+    - name: Gerar chave SSH para usuários
+      openssh_keypair:
+        path: "/home/{{ item }}/.ssh/id_rsa"
+        type: rsa
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0600"
+        state: present
+      loop: "{{ usuarios }}"
+
+    - name: Desativar autenticação por senha no SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: restart sshd
+
+    - name: Bloquear login remoto do root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+      notify: restart sshd
+
+    - name: Restringir acesso SSH por grupo
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowGroups'
+        line: 'AllowGroups vagrant ifpb'
+        state: present
+      notify: restart sshd
+
+
+    # ================= BANNER SSH =================
+
+    - name: Configurar banner de aviso legal
+      copy:
+        dest: /etc/issue.net
+        content: |
+          Acesso permitido apenas para pessoas autorizadas.
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Ativar banner no SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^Banner'
+        line: 'Banner /etc/issue.net'
+        state: present
+      notify: restart sshd
+
+
+    # ================= SUDO =================
+
+    - name: Permitir grupo ifpb usar sudo sem senha
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^%ifpb'
+        line: '%ifpb ALL=(ALL) NOPASSWD:ALL'
+        state: present
+        validate: 'visudo -cf %s'
+
+
+  handlers:
+
+    - name: restart chrony
+      systemd:
+        name: chrony
+        state: restarted
+        enabled: yes
+
+    - name: restart sshd
+      systemd:
+        name: sshd
+        state: restarted
+        enabled: yes

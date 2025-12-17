@@ -1,0 +1,38 @@
+options {
+    // Diretório de trabalho do BIND
+    directory "/var/cache/bind";
+
+    // ------------------------------------
+    // Controle de acesso às consultas DNS
+    // ------------------------------------
+    allow-query {
+        localhost;
+        192.168.56.0/24;
+    };
+
+    // ------------------------------------
+    // Servidores DNS de encaminhamento
+    // ------------------------------------
+    forwarders {
+        1.1.1.1;
+        8.8.8.8;
+    };
+
+    forward only;
+
+    // Validação DNSSEC
+    dnssec-validation auto;
+
+    // ------------------------------------
+    // Interfaces e portas de escuta
+    // ------------------------------------
+    listen-on port 53 {
+        localhost;
+        {{ ip_arq }};
+    };
+
+    listen-on-v6 { none; };
+
+    // Habilita resolução recursiva
+    recursion yes;
+};

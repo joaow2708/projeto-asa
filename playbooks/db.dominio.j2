@@ -1,0 +1,28 @@
+; ==================================================
+; Zona direta para o domínio {{ dominio }}
+; Projeto DevOps - IFPB
+; ==================================================
+
+$TTL 86400
+
+@   IN  SOA  arq.{{ dominio }}. admin.{{ dominio }}. (
+        2025121601 ; Serial (YYYYMMDDNN)
+        3600       ; Refresh
+        1800       ; Retry
+        604800     ; Expire
+        86400 )    ; Minimum TTL
+
+
+; ================= SERVIDORES DNS =================
+
+@               IN  NS  arq.{{ dominio }}.
+
+
+; ================= REGISTROS A =================
+
+arq             IN  A   {{ ip_arq }}
+db              IN  A   {{ ip_db }}
+app             IN  A   {{ ip_app }}
+
+; Alias comum (opcional, mas recomendado)
+www             IN  A   {{ ip_app }}
